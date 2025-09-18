@@ -1,10 +1,47 @@
-<!DOCTYPE html>
+// Load saved posts from localStorage on page load
+        function loadSavedPosts() {
+            try {
+                const savedPosts = localStorage.getItem('socialFeedPosts');
+                if (savedPosts) {
+                    const posts = JSON.parse(savedPosts);
+                    posts.forEach(postData => {
+                        const post = createPostElement(postData.user, postData.content, postData.imageUrl, postData.timeAgo);
+                        feed.insertBefore(post, feed.firstChild);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading saved posts:', error);
+            }
+        }
+        
+        // Save posts to localStorage
+        function savePosts() {
+            try {
+                localStorage.setItem('socialFeedPosts', JSON.stringify(allPosts));
+            } catch (error) {
+                console.error('Error saving posts:', error);
+            }
+        }
+        
+        // Format time ago
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+            
+            if (diffInMinutes < 1) return 'now';
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            
+            const diffInHours = Math.floor(diffInMinutes /<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simple Social Feed</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -464,9 +501,24 @@
     </div>
 
     <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcdoCYoCyTk_WsB3zWPkSYqxyAFC8IdjE",
+            authDomain: "ctcfeed-5d8ee.firebaseapp.com",
+            projectId: "ctcfeed-5d8ee",
+            storageBucket: "ctcfeed-5d8ee.firebasestorage.app",
+            messagingSenderId: "857721314412",
+            appId: "1:857721314412:web:e4a1b385ea897400324c49"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        
         // App state
         let isLoggedIn = false;
         let currentUser = null;
+        let allPosts = []; // Store all posts including user-created ones
         
         // Valid user credentials (in real app, this would be handled by a backend)
         const validUsers = {
@@ -568,7 +620,7 @@
             document.getElementById('postImage').value = '';
         });
         
-        document.getElementById('submitPost').addEventListener('click', (e) => {
+        document.getElementById('submitPost').addEventListener('click', async (e) => {
             e.preventDefault();
             console.log('Post button clicked!'); // Debug log
             
@@ -590,17 +642,24 @@
             }
             
             try {
-                // Create new post
-                const newPost = createPostElement(currentUser, content, imageUrl, 'now');
-                feed.insertBefore(newPost, feed.firstChild);
-                console.log('Post created successfully!'); // Debug log
+                // Save to Firebase
+                const success = await savePostToFirebase(currentUser, content, imageUrl);
                 
-                // Close modal and clear form
-                createPostModal.style.display = 'none';
-                document.getElementById('postContent').value = '';
-                document.getElementById('postImage').value = '';
-                
-                alert('Post created successfully!'); // Success feedback
+                if (success) {
+                    // Create new post and add to top of feed
+                    const newPost = createPostElement(currentUser, content, imageUrl, 'now');
+                    feed.insertBefore(newPost, feed.firstChild);
+                    console.log('Post created successfully!'); // Debug log
+                    
+                    // Close modal and clear form
+                    createPostModal.style.display = 'none';
+                    document.getElementById('postContent').value = '';
+                    document.getElementById('postImage').value = '';
+                    
+                    alert('Post created successfully!'); // Success feedback
+                } else {
+                    alert('Error saving post to database. Please try again.');
+                }
             } catch (error) {
                 console.error('Error creating post:', error);
                 alert('Error creating post. Check console for details.');
@@ -648,7 +707,61 @@
             return post;
         }
         
-        // Removed view counter functionality
+        // Firebase functions
+        async function loadPostsFromFirebase() {
+            try {
+                console.log('Loading posts from Firebase...');
+                const querySnapshot = await db.collection('posts').orderBy('timestamp', 'desc').get();
+                
+                querySnapshot.forEach((doc) => {
+                    const postData = doc.data();
+                    const timeAgo = getTimeAgo(postData.timestamp.toDate());
+                    const post = createPostElement(postData.user, postData.content, postData.imageUrl, timeAgo);
+                    feed.appendChild(post);
+                });
+                
+                console.log('Posts loaded successfully!');
+            } catch (error) {
+                console.error('Error loading posts:', error);
+            }
+        }
+        
+        async function savePostToFirebase(user, content, imageUrl) {
+            try {
+                console.log('Saving post to Firebase...');
+                await db.collection('posts').add({
+                    user: user,
+                    content: content,
+                    imageUrl: imageUrl,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log('Post saved successfully!');
+                return true;
+            } catch (error) {
+                console.error('Error saving post:', error);
+                return false;
+            }
+        }
+        
+        // Format time ago
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+            
+            if (diffInMinutes < 1) return 'now';
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            if (diffInHours < 24) return `${diffInHours}h ago`;
+            
+            const diffInDays = Math.floor(diffInHours / 24);
+            return `${diffInDays}d ago`;
+        }
+        
+        // Load posts when page loads
+        window.addEventListener('load', () => {
+            loadPostsFromFirebase();
+        });
         
         // Share functionality
         document.addEventListener('click', (e) => {
