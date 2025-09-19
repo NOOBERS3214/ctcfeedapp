@@ -1,37 +1,4 @@
-// Load saved posts from localStorage on page load
-        function loadSavedPosts() {
-            try {
-                const savedPosts = localStorage.getItem('socialFeedPosts');
-                if (savedPosts) {
-                    const posts = JSON.parse(savedPosts);
-                    posts.forEach(postData => {
-                        const post = createPostElement(postData.user, postData.content, postData.imageUrl, postData.timeAgo);
-                        feed.insertBefore(post, feed.firstChild);
-                    });
-                }
-            } catch (error) {
-                console.error('Error loading saved posts:', error);
-            }
-        }
-        
-        // Save posts to localStorage
-        function savePosts() {
-            try {
-                localStorage.setItem('socialFeedPosts', JSON.stringify(allPosts));
-            } catch (error) {
-                console.error('Error saving posts:', error);
-            }
-        }
-        
-        // Format time ago
-        function getTimeAgo(date) {
-            const now = new Date();
-            const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-            
-            if (diffInMinutes < 1) return 'now';
-            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-            
-            const diffInHours = Math.floor(diffInMinutes /<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
