@@ -9,6 +9,7 @@
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -239,6 +240,67 @@
             min-height: 100px;
         }
         
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .file-input {
+            position: absolute;
+            left: -9999px;
+        }
+        
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            border: 2px dashed #e1e8ed;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+            background-color: #f8f9fa;
+        }
+        
+        .file-input-label:hover {
+            border-color: #1da1f2;
+            background-color: #f0f8ff;
+        }
+        
+        .file-input-label i {
+            display: block;
+            font-size: 24px;
+            color: #657786;
+            margin-bottom: 8px;
+        }
+        
+        .image-preview {
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .image-preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .remove-image {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .remove-image:hover {
+            background: #ff3742;
+        }
+        
         .modal-buttons {
             display: flex;
             justify-content: flex-end;
@@ -264,6 +326,11 @@
             border-radius: 20px;
             cursor: pointer;
             font-weight: 600;
+        }
+        
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
         }
         
         .share-options {
@@ -329,9 +396,6 @@
         <header>
             <div class="logo">SocialFeed</div>
             <div class="user-actions">
-                <a href="#">Home</a>
-                <a href="#">Explore</a>
-                <a href="#">Profile</a>
                 <div id="authSection">
                     <button class="login-btn" id="loginBtn">Login</button>
                 </div>
@@ -431,8 +495,15 @@
                 <textarea id="postContent" placeholder="Share your thoughts..."></textarea>
             </div>
             <div class="form-group">
-                <label for="postImage">Image URL (optional):</label>
-                <input type="url" id="postImage" placeholder="https://example.com/image.jpg">
+                <label>Upload Image (optional):</label>
+                <div class="file-input-wrapper">
+                    <input type="file" id="postImageFile" class="file-input" accept="image/*">
+                    <label for="postImageFile" class="file-input-label">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span>Click to select an image</span>
+                    </label>
+                </div>
+                <div class="image-preview" id="imagePreview"></div>
             </div>
             <div class="modal-buttons">
                 <button class="btn-cancel" id="cancelPost">Cancel</button>
@@ -481,11 +552,13 @@
         // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
+        const storage = firebase.storage();
         
         // App state
         let isLoggedIn = false;
         let currentUser = null;
         let allPosts = []; // Store all posts including user-created ones
+        let selectedImageFile = null; // Store selected image file
         
         // Valid user credentials (in real app, this would be handled by a backend)
         const validUsers = {
@@ -504,6 +577,8 @@
         const createPostModal = document.getElementById('createPostModal');
         const shareModal = document.getElementById('shareModal');
         const feed = document.getElementById('feed');
+        const postImageFile = document.getElementById('postImageFile');
+        const imagePreview = document.getElementById('imagePreview');
         
         // Login functionality
         loginBtn.addEventListener('click', () => {
@@ -562,7 +637,7 @@
                 alert('Login successful! Welcome ' + currentUser.name);
             } else {
                 console.log('Login failed - credentials don\'t match');
-                alert('Invalid username or password!\n\nTry:\nUsername: phillip.walker\nPassword: demo123\n\nOr:\nUsername: miguel.dennis\nPassword: user456\n\nOr:\nUsername: ms.dillon\nPassword: test789');
+                alert('Invalid');
             }
         });
         
@@ -591,18 +666,59 @@
         document.getElementById('cancelPost').addEventListener('click', () => {
             createPostModal.style.display = 'none';
             document.getElementById('postContent').value = '';
-            document.getElementById('postImage').value = '';
+            selectedImageFile = null;
+            imagePreview.innerHTML = '';
+            postImageFile.value = '';
         });
+        
+        // Handle file selection
+        postImageFile.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    alert('Please select a valid image file.');
+                    postImageFile.value = '';
+                    return;
+                }
+                
+                // Validate file size (max 5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    alert('Image file is too large. Please select an image smaller than 5MB.');
+                    postImageFile.value = '';
+                    return;
+                }
+                
+                selectedImageFile = file;
+                
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.innerHTML = `
+                        <img src="${e.target.result}" alt="Preview">
+                        <br>
+                        <button type="button" class="remove-image" onclick="removeSelectedImage()">Remove Image</button>
+                    `;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+        
+        // Remove selected image
+        window.removeSelectedImage = function() {
+            selectedImageFile = null;
+            imagePreview.innerHTML = '';
+            postImageFile.value = '';
+        };
         
         document.getElementById('submitPost').addEventListener('click', async (e) => {
             e.preventDefault();
             console.log('Post button clicked!'); // Debug log
             
             const content = document.getElementById('postContent').value.trim();
-            const imageUrl = document.getElementById('postImage').value.trim();
             
             console.log('Content:', content); // Debug log
-            console.log('Image URL:', imageUrl); // Debug log
+            console.log('Selected image file:', selectedImageFile); // Debug log
             console.log('Current user:', currentUser); // Debug log
             
             if (!content) {
@@ -615,7 +731,21 @@
                 return;
             }
             
+            // Disable submit button to prevent double submission
+            const submitBtn = document.getElementById('submitPost');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Posting...';
+            
             try {
+                let imageUrl = '';
+                
+                // Upload image if selected
+                if (selectedImageFile) {
+                    console.log('Uploading image...');
+                    imageUrl = await uploadImageToFirebase(selectedImageFile);
+                    console.log('Image uploaded, URL:', imageUrl);
+                }
+                
                 // Save to Firebase
                 const success = await savePostToFirebase(currentUser, content, imageUrl);
                 
@@ -628,7 +758,9 @@
                     // Close modal and clear form
                     createPostModal.style.display = 'none';
                     document.getElementById('postContent').value = '';
-                    document.getElementById('postImage').value = '';
+                    selectedImageFile = null;
+                    imagePreview.innerHTML = '';
+                    postImageFile.value = '';
                     
                     alert('Post created successfully!'); // Success feedback
                 } else {
@@ -637,8 +769,29 @@
             } catch (error) {
                 console.error('Error creating post:', error);
                 alert('Error creating post. Check console for details.');
+            } finally {
+                // Re-enable submit button
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Post';
             }
         });
+        
+        // Upload image to Firebase Storage
+        async function uploadImageToFirebase(file) {
+            try {
+                const timestamp = Date.now();
+                const fileName = `images/${timestamp}_${file.name}`;
+                const storageRef = storage.ref().child(fileName);
+                
+                const snapshot = await storageRef.put(file);
+                const downloadURL = await snapshot.ref.getDownloadURL();
+                
+                return downloadURL;
+            } catch (error) {
+                console.error('Error uploading image:', error);
+                throw error;
+            }
+        }
         
         // Create post element function
         function createPostElement(user, content, imageUrl, timeAgo) {
@@ -759,7 +912,9 @@
             if (event.target === createPostModal) {
                 createPostModal.style.display = 'none';
                 document.getElementById('postContent').value = '';
-                document.getElementById('postImage').value = '';
+                selectedImageFile = null;
+                imagePreview.innerHTML = '';
+                postImageFile.value = '';
             }
             if (event.target === shareModal) {
                 shareModal.style.display = 'none';
