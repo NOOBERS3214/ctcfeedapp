@@ -506,6 +506,23 @@
         const db = firebase.firestore();
         const storage = firebase.storage();
         
+        // Test Firebase connection
+        db.enablePersistence().catch((err) => {
+            if (err.code === 'failed-precondition') {
+                console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+            } else if (err.code === 'unimplemented') {
+                console.log('The current browser does not support all of the features required to enable persistence');
+            }
+        });
+        
+        // Test connection by attempting to read from Firestore
+        db.collection('posts').limit(1).get().then(() => {
+            console.log('Firebase connection successful!');
+        }).catch((error) => {
+            console.error('Firebase connection failed:', error);
+            alert('Warning: Unable to connect to database. Some features may not work properly.');
+        });
+        
         // App state
         let isLoggedIn = false;
         let currentUser = null;
@@ -712,13 +729,11 @@
                 }
                 
                 // Save to Firebase
-                const success = await savePostToFirebase(currentUser, content, imageUrl);
+                const postId = await savePostToFirebase(currentUser, content, imageUrl);
                 
-                if (success) {
-                    // Create new post and add to top of feed
-                    const newPost = createPostElement(currentUser, content, imageUrl, 'now');
-                    feed.insertBefore(newPost, feed.firstChild);
-                    console.log('Post created successfully!'); // Debug log
+                if (postId) {
+                    // Real-time listener will automatically add the post to the feed
+                    console.log('Post created successfully with ID:', postId); // Debug log
                     
                     // Close modal and clear form
                     createPostModal.style.display = 'none';
@@ -798,6 +813,7 @@
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    console.log('Delete button clicked for post ID:', postId);
                     deletePost(post, postId);
                 });
             }
@@ -828,17 +844,23 @@
         async function savePostToFirebase(user, content, imageUrl) {
             try {
                 console.log('Saving post to Firebase...');
-                await db.collection('posts').add({
+                console.log('User:', user);
+                console.log('Content:', content);
+                console.log('Image URL:', imageUrl);
+                
+                const docRef = await db.collection('posts').add({
                     user: user,
                     content: content,
                     imageUrl: imageUrl,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                console.log('Post saved successfully!');
-                return true;
+                
+                console.log('Post saved successfully with ID:', docRef.id);
+                return docRef.id; // Return the document ID for proper deletion later
             } catch (error) {
                 console.error('Error saving post:', error);
-                return false;
+                console.error('Error details:', error.message);
+                return null;
             }
         }
         
@@ -882,6 +904,8 @@
             }
             
             try {
+                console.log('Attempting to delete post with ID:', postId);
+                
                 // If it's a Firebase post, delete from database
                 if (postId && postId !== 'temp' && !postId.startsWith('static-')) {
                     console.log('Deleting post from Firebase:', postId);
@@ -915,10 +939,35 @@
             return `${diffInDays}d ago`;
         }
         
+        // Real-time listener for new posts
+        function setupRealtimeListener() {
+            db.collection('posts')
+                .orderBy('timestamp', 'desc')
+                .onSnapshot((querySnapshot) => {
+                    console.log('Real-time update received');
+                    
+                    // Clear existing posts
+                    feed.innerHTML = '';
+                    
+                    querySnapshot.forEach((doc) => {
+                        const postData = doc.data();
+                        const timeAgo = getTimeAgo(postData.timestamp.toDate());
+                        const post = createPostElement(postData.user, postData.content, postData.imageUrl, timeAgo, doc.id);
+                        feed.appendChild(post);
+                    });
+                    
+                    // Update delete buttons visibility after loading posts
+                    updateDeleteButtonsVisibility();
+                }, (error) => {
+                    console.error('Error in real-time listener:', error);
+                    // Fallback to regular loading
+                    loadPostsFromFirebase();
+                });
+        }
+        
         // Load posts when page loads
         window.addEventListener('load', () => {
-            loadPostsFromFirebase();
-            updateDeleteButtonsVisibility();
+            setupRealtimeListener();
         });
         
         // Share functionality
