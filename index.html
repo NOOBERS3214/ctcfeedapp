@@ -538,6 +538,1136 @@
         });
         
         // Test connection by attempting to read from Firestore
+        db.collection('posts').limit(1).get().then((querySnapshot) => {
+            console.log('✅ Firebase connection successful!');
+            console.log('Found', querySnapshot.size, 'existing posts');
+            firebaseConnected = true;
+        }).catch((error) => {
+            console.error('❌ Firebase connection failed:', error);
+            console.error('Error code:', error.code);
+            console.error('Error message:', error.message);
+            firebaseConnected = false;
+            
+            let errorMessage = 'Warning: Unable to connect to database. ';
+            if (error.code === 'permission-denied') {
+                errorMessage += 'Please check your Firebase security rules.';
+            } else if (error.code === 'unavailable') {
+                errorMessage += 'Firebase service is unavailable.';
+            } else {
+                errorMessage += 'Some features may not work properly.';
+            }
+            
+            alert(errorMessage);
+        });
+        
+        // App state
+        let isLoggedIn = false;
+        let currentUser = null;
+        let allPosts = []; // Store all posts including user-created ones
+        let selectedImageFile = null; // Store selected image file
+        let firebaseConnected = false; // Track Firebase connection status
+        
+        // Valid user credentials (in real app, this would be handled by a backend)
+        const validUsers = {
+            'phillip.walker': { password: 'demo123', name: 'Phillip Walker', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80' },
+            'miguel.dennis': { password: 'user456', name: 'Miguel Dennis', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80' },
+            'ms.dillon': { password: 'test789', name: 'Ms. Dillon', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80' },
+            'admin': { password: 'admin', name: 'Administrator', avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80' }
+        };
+        
+        // DOM elements
+        const loginBtn = document.getElementById('loginBtn');
+        const authSection = document.getElementById('authSection');
+        const createPostSection = document.getElementById('createPostSection');
+        const createPostBtn = document.getElementById('createPostBtn');
+        const loginModal = document.getElementById('loginModal');
+        const createPostModal = document.getElementById('createPostModal');
+        const shareModal = document.getElementById('shareModal');
+        const feed = document.getElementById('feed');
+        const postImageFile = document.getElementById('postImageFile');
+        const imagePreview = document.getElementById('imagePreview');
+        
+        // Login functionality
+        loginBtn.addEventListener('click', () => {
+            loginModal.style.display = 'flex';
+        });
+        
+        document.getElementById('cancelLogin').addEventListener('click', () => {
+            loginModal.style.display = 'none';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+        });
+        
+        document.getElementById('submitLogin').addEventListener('click', (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value.trim().toLowerCase();
+            const password = document.getElementById('password').value;
+            
+            console.log('Login attempt:', username);
+            console.log('Password entered:', password);
+            console.log('Valid users:', validUsers);
+            console.log('User exists:', validUsers[username]);
+            console.log('Password match:', validUsers[username] && validUsers[username].password === password);
+            
+            if (!username || !password) {
+                alert('Please enter both username and password!');
+                return;
+            }
+            
+            // Check credentials
+            if (validUsers[username] && validUsers[username].password === password) {
+                isLoggedIn = true;
+                currentUser = {
+                    name: validUsers[username].name,
+                    username: '@' + username,
+                    avatar: validUsers[username].avatar
+                };
+                
+                console.log('Login successful:', currentUser);
+                
+                // Update UI
+                authSection.innerHTML = `
+                    <div class="user-status">
+                        <span>Welcome, ${currentUser.name}!</span>
+                        <button class="logout-btn" id="logoutBtn">Logout</button>
+                    </div>
+                `;
+                
+                createPostSection.classList.add('show');
+                loginModal.style.display = 'none';
+                document.getElementById('username').value = '';
+                document.getElementById('password').value = '';
+                
+                // Add logout functionality
+                document.getElementById('logoutBtn').addEventListener('click', logout);
+                
+                // Show delete buttons for user's posts
+                updateDeleteButtonsVisibility();
+                
+                alert('Login successful! Welcome ' + currentUser.name);
+            } else {
+                console.log('Login failed - credentials don\'t match');
+                alert('Invalid');
+            }
+        });
+        
+        // Logout functionality
+        function logout() {
+            isLoggedIn = false;
+            currentUser = null;
+            authSection.innerHTML = '<button class="login-btn" id="loginBtn">Login</button>';
+            createPostSection.classList.remove('show');
+            
+            // Hide all delete buttons
+            updateDeleteButtonsVisibility();
+            
+            // Re-attach login event listener
+            document.getElementById('loginBtn').addEventListener('click', () => {
+                loginModal.style.display = 'flex';
+            });
+        }
+        
+        // Test database connection function
+        async function testDatabaseConnection() {
+            try {
+                const testQuery = await db.collection('posts').limit(1).get();
+                console.log('✅ Database connection test successful');
+                return true;
+            } catch (error) {
+                console.error('❌ Database connection test failed:', error);
+                return false;
+            }
+        }
+        
+        // Create post functionality
+        createPostBtn.addEventListener('click', async () => {
+            if (!isLoggedIn) {
+                alert('Please login first!');
+                return;
+            }
+            
+            // Test database connection before opening modal
+            if (!firebaseConnected) {
+                console.log('Testing database connection...');
+                const connected = await testDatabaseConnection();
+                if (!connected) {
+                    alert('❌ Cannot connect to database. Please check your internet connection and try again.');
+                    return;
+                }
+                firebaseConnected = true;
+            }
+            
+            createPostModal.style.display = 'flex';
+        });
+        
+        document.getElementById('cancelPost').addEventListener('click', () => {
+            createPostModal.style.display = 'none';
+            document.getElementById('postContent').value = '';
+            selectedImageFile = null;
+            imagePreview.innerHTML = '';
+            postImageFile.value = '';
+        });
+        
+        // Handle file selection
+        postImageFile.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    alert('Please select a valid image file.');
+                    postImageFile.value = '';
+                    return;
+                }
+                
+                // No file size limit - removed 5MB restriction
+                console.log('Selected file size:', (file.size / (1024 * 1024)).toFixed(2) + 'MB');
+                
+                selectedImageFile = file;
+                
+                // Show preview with better error handling
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.innerHTML = `
+                        <img src="${e.target.result}" alt="Preview" style="max-width: 100%; max-height: 200px; border-radius: 8px;">
+                        <br>
+                        <button type="button" class="remove-image" onclick="removeSelectedImage()">Remove Image</button>
+                    `;
+                };
+                reader.onerror = (error) => {
+                    console.error('Error reading file:', error);
+                    alert('Error reading the image file. Please try a different image.');
+                    postImageFile.value = '';
+                    selectedImageFile = null;
+                    imagePreview.innerHTML = '';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+        
+        // Remove selected image
+        window.removeSelectedImage = function() {
+            selectedImageFile = null;
+            imagePreview.innerHTML = '';
+            postImageFile.value = '';
+        };
+        
+        document.getElementById('submitPost').addEventListener('click', async (e) => {
+            e.preventDefault();
+            console.log('=== Post Button Clicked ===');
+            
+            const content = document.getElementById('postContent').value.trim();
+            
+            console.log('Content:', content);
+            console.log('Selected image file:', selectedImageFile);
+            console.log('Current user:', currentUser);
+            console.log('Firebase connected:', firebaseConnected);
+            
+            // Validation checks
+            if (!content) {
+                alert('Please enter some content for your post!');
+                return;
+            }
+            
+            if (!currentUser) {
+                alert('Please login first!');
+                return;
+            }
+            
+            if (!firebaseConnected) {
+                console.log('Testing database connection before posting...');
+                const connected = await testDatabaseConnection();
+                if (!connected) {
+                    alert('❌ Cannot connect to database. Please check your internet connection and try again.');
+                    return;
+                }
+                firebaseConnected = true;
+            }
+            
+            // Disable submit button to prevent double submission
+            const submitBtn = document.getElementById('submitPost');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Posting...';
+            
+            try {
+                let imageUrl = '';
+                
+                // Handle image upload
+                if (selectedImageFile) {
+                    console.log('Processing image:', selectedImageFile.name, (selectedImageFile.size / (1024 * 1024)).toFixed(2) + 'MB');
+                    submitBtn.innerHTML = '<span class="loading-indicator"></span>Processing Image...';
+                    
+                    try {
+                        // Convert to data URL instead of uploading to Storage
+                        imageUrl = await convertFileToDataURL(selectedImageFile);
+                        console.log('Image converted to data URL successfully');
+                        submitBtn.innerHTML = '<span class="loading-indicator"></span>Posting...';
+                    } catch (error) {
+                        console.error('Error converting image:', error);
+                        alert('Error processing image: ' + error.message);
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Post';
+                        return;
+                    }
+                }
+                
+                // Save to Firebase with retry mechanism
+                let postId = await savePostToFirebase(currentUser, content, imageUrl);
+                
+                if (!postId) {
+                    // Retry once if first attempt failed
+                    console.log('Retrying post save...');
+                    submitBtn.innerHTML = '<span class="loading-indicator"></span>Retrying...';
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                    postId = await savePostToFirebase(currentUser, content, imageUrl);
+                }
+                
+                if (postId) {
+                    // Real-time listener will automatically add the post to the feed
+                    console.log('✅ Post created successfully with ID:', postId);
+                    
+                    // Close modal and clear form
+                    createPostModal.style.display = 'none';
+                    document.getElementById('postContent').value = '';
+                    selectedImageFile = null;
+                    imagePreview.innerHTML = '';
+                    postImageFile.value = '';
+                    
+                    alert('✅ Post created successfully!');
+                } else {
+                    console.error('❌ Failed to save post after retry');
+                    alert('❌ Error saving post to database. Please check your internet connection and try again.');
+                }
+            } catch (error) {
+                console.error('Error creating post:', error);
+                alert('Error creating post. Check console for details.');
+            } finally {
+                // Re-enable submit button
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Post';
+            }
+        });
+        
+        // Convert file to data URL with better error handling
+        function convertFileToDataURL(file) {
+            return new Promise((resolve, reject) => {
+                console.log('Converting file to data URL:', file.name, (file.size / (1024 * 1024)).toFixed(2) + 'MB');
+                
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    console.log('File converted successfully');
+                    resolve(e.target.result);
+                };
+                
+                reader.onerror = (e) => {
+                    console.error('Error converting file:', e);
+                    reject(new Error('Failed to process image file. Please try a different image.'));
+                };
+                
+                reader.onabort = () => {
+                    console.error('File reading was aborted');
+                    reject(new Error('Image processing was cancelled.'));
+                };
+                
+                // Use a timeout for very large files
+                const timeout = setTimeout(() => {
+                    reader.abort();
+                    reject(new Error('Image processing took too long. Please try a smaller image.'));
+                }, 30000); // 30 second timeout
+                
+                reader.onloadend = () => {
+                    clearTimeout(timeout);
+                };
+                
+                try {
+                    reader.readAsDataURL(file);
+                } catch (error) {
+                    clearTimeout(timeout);
+                    console.error('Error starting file read:', error);
+                    reject(new Error('Unable to read image file. Please try a different image.'));
+                }
+            });
+        }
+        
+        // Create post element function
+        function createPostElement(user, content, imageUrl, timeAgo, postId = null) {
+            console.log('Creating post element...'); // Debug log
+            
+            const post = document.createElement('div');
+            post.className = 'post';
+            
+            const imageHTML = imageUrl && imageUrl !== '' ? 
+                `<img src="${imageUrl}" alt="Post image" class="post-image" 
+                     onerror="this.style.display='none'; console.log('Image failed to load:', this.src.substring(0, 50) + '...');" 
+                     onload="console.log('Image loaded successfully')">` : '';
+            
+            post.innerHTML = `
+                <div class="post-header">
+                    <img src="${user.avatar}" alt="User Avatar" class="avatar" onerror="this.src='https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'">
+                    <div class="user-info">
+                        <h3>${user.name}</h3>
+                        <span>${user.username} · ${timeAgo}</span>
+                    </div>
+                </div>
+                <p class="post-content">${content.replace(/\n/g, '<br>')}</p>
+                ${imageHTML}
+                <div class="post-actions">
+                    <button class="action-btn share-btn">
+                        <i class="fas fa-share"></i>
+                        <span>Share</span>
+                    </button>
+                    ${isLoggedIn && currentUser && user.username === currentUser.username ? 
+                        `<button class="action-btn delete-btn" data-post-id="${postId || 'temp'}">
+                            <i class="fas fa-trash"></i>
+                            <span>Delete</span>
+                        </button>` : ''}
+                </div>
+            `;
+            
+            // Add event listeners
+            const shareBtn = post.querySelector('.share-btn');
+            if (shareBtn) {
+                shareBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    shareModal.style.display = 'flex';
+                });
+            }
+            
+            // Add delete button event listener
+            const deleteBtn = post.querySelector('.delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    console.log('Delete button clicked for post ID:', postId);
+                    deletePost(post, postId);
+                });
+            }
+            
+            console.log('Post element created successfully!'); // Debug log
+            return post;
+        }
+        
+        // Firebase functions
+        async function loadPostsFromFirebase() {
+            try {
+                console.log('Loading posts from Firebase...');
+                const querySnapshot = await db.collection('posts').orderBy('timestamp', 'desc').get();
+                
+                querySnapshot.forEach((doc) => {
+                    const postData = doc.data();
+                    const timeAgo = getTimeAgo(postData.timestamp.toDate());
+                    const post = createPostElement(postData.user, postData.content, postData.imageUrl, timeAgo, doc.id);
+                    feed.appendChild(post);
+                });
+                
+                console.log('Posts loaded successfully!');
+            } catch (error) {
+                console.error('Error loading posts:', error);
+            }
+        }
+        
+        async function savePostToFirebase(user, content, imageUrl) {
+            try {
+                console.log('=== Starting Firebase Save ===');
+                console.log('User:', user);
+                console.log('Content:', content);
+                console.log('Image URL length:', imageUrl ? imageUrl.length : 'No image');
+                console.log('Firebase connection status:', db ? 'Connected' : 'Not connected');
+                
+                // Validate required fields
+                if (!user || !content) {
+                    throw new Error('Missing required fields: user and content are required');
+                }
+                
+                if (!user.name || !user.username) {
+                    throw new Error('Invalid user data: name and username are required');
+                }
+                
+                // Prepare the document data
+                const postData = {
+                    user: {
+                        name: user.name,
+                        username: user.username,
+                        avatar: user.avatar
+                    },
+                    content: content.trim(),
+                    imageUrl: imageUrl || '',
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    createdAt: new Date().toISOString()
+                };
+                
+                console.log('Post data prepared:', postData);
+                
+                // Test Firebase connection first
+                const testQuery = await db.collection('posts').limit(1).get();
+                console.log('Firebase connection test successful');
+                
+                // Save the post
+                const docRef = await db.collection('posts').add(postData);
+                
+                console.log('✅ Post saved successfully with ID:', docRef.id);
+                return docRef.id;
+                
+            } catch (error) {
+                console.error('❌ Error saving post to Firebase:', error);
+                console.error('Error code:', error.code);
+                console.error('Error message:', error.message);
+                console.error('Full error object:', error);
+                
+                // Provide specific error messages based on error type
+                let errorMessage = 'Failed to save post. ';
+                if (error.code === 'permission-denied') {
+                    errorMessage += 'Permission denied. Please check your Firebase security rules.';
+                } else if (error.code === 'unavailable') {
+                    errorMessage += 'Firebase service is unavailable. Please try again later.';
+                } else if (error.code === 'unauthenticated') {
+                    errorMessage += 'Authentication required. Please login again.';
+                } else if (error.message.includes('Missing required fields')) {
+                    errorMessage += error.message;
+                } else {
+                    errorMessage += 'Please check your internet connection and try again.';
+                }
+                
+                alert(errorMessage);
+                return null;
+            }
+        }
+        
+        // Update delete buttons visibility based on login status
+        function updateDeleteButtonsVisibility() {
+            const deleteButtons = document.querySelectorAll('.delete-btn');
+            deleteButtons.forEach(button => {
+                if (isLoggedIn && currentUser) {
+                    // Show delete button for current user's posts
+                    const postElement = button.closest('.post');
+                    const userInfo = postElement.querySelector('.user-info h3');
+                    if (userInfo && userInfo.textContent === currentUser.name) {
+                        button.style.display = 'flex';
+                        // Add event listener if not already added
+                        if (!button.hasAttribute('data-listener-added')) {
+                            button.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                deletePost(postElement, button.getAttribute('data-post-id'));
+                            });
+                            button.setAttribute('data-listener-added', 'true');
+                        }
+                    } else {
+                        button.style.display = 'none';
+                    }
+                } else {
+                    button.style.display = 'none';
+                }
+            });
+        }
+        
+        // Delete post function
+        async function deletePost(postElement, postId) {
+            if (!isLoggedIn || !currentUser) {
+                alert('Please login first!');
+                return;
+            }
+            
+            // Show confirmation dialog
+            if (!confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
+                return;
+            }
+            
+            try {
+                console.log('Attempting to delete post with ID:', postId);
+                
+                // If it's a Firebase post, delete from database
+                if (postId && postId !== 'temp' && !postId.startsWith('static-')) {
+                    console.log('Deleting post from Firebase:', postId);
+                    await db.collection('posts').doc(postId).delete();
+                    console.log('Post deleted from Firebase successfully!');
+                }
+                
+                // Remove from DOM
+                postElement.remove();
+                console.log('Post removed from DOM successfully!');
+                
+                alert('Post deleted successfully!');
+            } catch (error) {
+                console.error('Error deleting post:', error);
+                alert('Error deleting post. Please try again.');
+            }
+        }
+        
+        // Format time ago
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+            
+            if (diffInMinutes < 1) return 'now';
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            if (diffInHours < 24) return `${diffInHours}h ago`;
+            
+            const diffInDays = Math.floor(diffInHours / 24);
+            return `${diffInDays}d ago`;
+        }
+        
+        // Real-time listener for new posts
+        function setupRealtimeListener() {
+            db.collection('posts')
+                .orderBy('timestamp', 'desc')
+                .onSnapshot((querySnapshot) => {
+                    console.log('Real-time update received');
+                    
+                    // Clear existing posts
+                    feed.innerHTML = '';
+                    
+                    querySnapshot.forEach((doc) => {
+                        const postData = doc.data();
+                        const timeAgo = getTimeAgo(postData.timestamp.toDate());
+                        const post = createPostElement(postData.user, postData.content, postData.imageUrl, timeAgo, doc.id);
+                        feed.appendChild(post);
+                    });
+                    
+                    // Update delete buttons visibility after loading posts
+                    updateDeleteButtonsVisibility();
+                }, (error) => {
+                    console.error('Error in real-time listener:', error);
+                    // Fallback to regular loading
+                    loadPostsFromFirebase();
+                });
+        }
+        
+        // Load posts when page loads
+        window.addEventListener('load', () => {
+            setupRealtimeListener();
+        });
+        
+        // Share functionality
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('.share-btn')) {
+                e.stopPropagation();
+                shareModal.style.display = 'flex';
+            }
+        });
+        
+        document.getElementById('closeShareModal').addEventListener('click', () => {
+            shareModal.style.display = 'none';
+        });
+        
+        // Close modals when clicking outside
+        window.addEventListener('click', (event) => {
+            if (event.target === loginModal) {
+                loginModal.style.display = 'none';
+                document.getElementById('username').value = '';
+                document.getElementById('password').value = '';
+            }
+            if (event.target === createPostModal) {
+                createPostModal.style.display = 'none';
+                document.getElementById('postContent').value = '';
+                selectedImageFile = null;
+                imagePreview.innerHTML = '';
+                postImageFile.value = '';
+            }
+            if (event.target === shareModal) {
+                shareModal.style.display = 'none';
+            }
+        });
+        
+        // Handle Enter key in forms
+        document.getElementById('username').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('password').focus();
+            }
+        });
+        
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('submitLogin').click();
+            }
+        });
+        
+        document.getElementById('postContent').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                document.getElementById('submitPost').click();
+            }
+        });
+        
+        // Debug: Check if elements exist on page load
+        console.log('Page loaded, checking elements...');
+        console.log('submitPost button:', document.getElementById('submitPost'));
+        console.log('createPostModal:', document.getElementById('createPostModal'));
+        console.log('feed element:', document.getElementById('feed'));
+        console.log('username field:', document.getElementById('username'));
+        console.log('password field:', document.getElementById('password'));
+    </script>
+</body>
+</html>
+            background: #657786;
+        }
+        
+        .logout-btn:hover {
+            background: #556270;
+        }
+        
+        .user-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #14171a;
+            font-weight: 600;
+        }
+        
+        .post {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s;
+        }
+        
+        .post:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .post-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 12px;
+            border: 2px solid #e1e8ed;
+        }
+        
+        .user-info h3 {
+            font-weight: 700;
+            color: #14171a;
+        }
+        
+        .user-info span {
+            color: #657786;
+            font-size: 14px;
+        }
+        
+        .post-content {
+            margin-bottom: 15px;
+            color: #14171a;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        
+        .post-image {
+            width: 100%;
+            border-radius: 16px;
+            margin-bottom: 15px;
+            max-height: 400px;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .post-image:hover {
+            transform: scale(1.02);
+        }
+        
+        .post-actions {
+            display: flex;
+            justify-content: flex-end;
+            border-top: 1px solid #e1e8ed;
+            padding-top: 15px;
+        }
+        
+        .action-btn {
+            display: flex;
+            align-items: center;
+            color: #657786;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        
+        .action-btn i {
+            margin-right: 5px;
+            font-size: 18px;
+        }
+        
+        .action-btn:hover {
+            color: #1da1f2;
+        }
+        
+        .share-btn:hover {
+            color: #17bf63;
+        }
+        
+        .delete-btn:hover {
+            color: #ff4757;
+        }
+        
+        .views-count {
+            display: flex;
+            align-items: center;
+            color: #657786;
+            font-size: 14px;
+        }
+        
+        .views-count i {
+            margin-right: 5px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 400px;
+        }
+        
+        .modal-content h3 {
+            margin-bottom: 20px;
+            color: #14171a;
+            text-align: center;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #14171a;
+            font-weight: 600;
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #1da1f2;
+        }
+        
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .file-input {
+            position: absolute;
+            left: -9999px;
+        }
+        
+        .file-input-label {
+            display: block;
+            padding: 12px;
+            border: 2px dashed #e1e8ed;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background-color 0.2s;
+            background-color: #f8f9fa;
+        }
+        
+        .file-input-label:hover {
+            border-color: #1da1f2;
+            background-color: #f0f8ff;
+        }
+        
+        .file-input-label i {
+            display: block;
+            font-size: 24px;
+            color: #657786;
+            margin-bottom: 8px;
+        }
+        
+        .image-preview {
+            margin-top: 10px;
+            text-align: center;
+        }
+        
+        .image-preview img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .remove-image {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .remove-image:hover {
+            background: #ff3742;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn-cancel {
+            background: #657786;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: #1da1f2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .loading-indicator {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #1da1f2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .share-options {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .share-option {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .share-option:hover {
+            transform: scale(1.1);
+        }
+        
+        .share-option i {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .create-post-section {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            display: none;
+        }
+        
+        .create-post-section.show {
+            display: block;
+        }
+        
+        @media (max-width: 480px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .post {
+                padding: 15px;
+            }
+            
+            .avatar {
+                width: 40px;
+                height: 40px;
+            }
+            
+            .user-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">SocialFeed</div>
+            <div class="user-actions">
+                <div id="authSection">
+                    <button class="login-btn" id="loginBtn">Login</button>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Create Post Section (only visible when logged in) -->
+        <div class="create-post-section" id="createPostSection">
+            <h3 style="margin-bottom: 15px; color: #14171a;">What's on your mind?</h3>
+            <button class="create-post-btn" id="createPostBtn">
+                <i class="fas fa-edit"></i> Create New Post
+            </button>
+        </div>
+        
+        <div class="feed" id="feed">
+            <!-- Posts will be loaded dynamically from Firebase -->
+        </div>
+    </div>
+    
+    <!-- Login Modal -->
+    <div class="modal" id="loginModal">
+        <div class="modal-content">
+            <h3>Login to Your Account</h3>
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" placeholder="Enter your username">
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" placeholder="Enter your password">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="cancelLogin">Cancel</button>
+                <button class="btn-primary" id="submitLogin">Login</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Create Post Modal -->
+    <div class="modal" id="createPostModal">
+        <div class="modal-content">
+            <h3>Create New Post</h3>
+            <div class="form-group">
+                <label for="postContent">What's happening?</label>
+                <textarea id="postContent" placeholder="Share your thoughts..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Upload Image (optional):</label>
+                <div class="file-input-wrapper">
+                    <input type="file" id="postImageFile" class="file-input" accept="image/*">
+                    <label for="postImageFile" class="file-input-label">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span>Click to select an image</span>
+                    </label>
+                </div>
+                <div class="image-preview" id="imagePreview"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn-cancel" id="cancelPost">Cancel</button>
+                <button class="btn-primary" id="submitPost">Post</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Share Modal -->
+    <div class="modal" id="shareModal">
+        <div class="modal-content">
+            <h3>Share this post</h3>
+            <div class="share-options">
+                <div class="share-option">
+                    <i class="fab fa-twitter" style="color: #1da1f2;"></i>
+                    <span>Twitter</span>
+                </div>
+                <div class="share-option">
+                    <i class="fab fa-facebook" style="color: #1877f2;"></i>
+                    <span>Facebook</span>
+                </div>
+                <div class="share-option">
+                    <i class="fab fa-linkedin" style="color: #0a66c2;"></i>
+                    <span>LinkedIn</span>
+                </div>
+                <div class="share-option">
+                    <i class="fas fa-link" style="color: #657786;"></i>
+                    <span>Copy Link</span>
+                </div>
+            </div>
+            <button class="btn-primary" id="closeShareModal">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCcdoCYoCyTk_WsB3zWPkSYqxyAFC8IdjE",
+            authDomain: "ctcfeed-5d8ee.firebaseapp.com",
+            projectId: "ctcfeed-5d8ee",
+            storageBucket: "ctcfeed-5d8ee.firebasestorage.app",
+            messagingSenderId: "857721314412",
+            appId: "1:857721314412:web:e4a1b385ea897400324c49"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+        
+        // Test Firebase connection
+        db.enablePersistence().catch((err) => {
+            if (err.code === 'failed-precondition') {
+                console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+            } else if (err.code === 'unimplemented') {
+                console.log('The current browser does not support all of the features required to enable persistence');
+            }
+        });
+        
+        // Test connection by attempting to read from Firestore
         db.collection('posts').limit(1).get().then(() => {
             console.log('Firebase connection successful!');
         }).catch((error) => {
